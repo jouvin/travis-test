@@ -1,2 +1,2 @@
 language: bash
-script: create-vanilla-SCDB.sh HEAD
+script: ./create-vanilla-SCDB.sh HEAD
