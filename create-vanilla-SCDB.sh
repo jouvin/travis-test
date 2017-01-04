@@ -5,8 +5,8 @@
 # Written by Michel Jouvin <jouvin@lal.in2p3.fr>, 30/9/2013
 #
 
-git_clone_root=/tmp/quattor-template-library
-scdb_dir=/tmp/scdb-vanilla
+git_clone_root=${TMPDIR:-/tmp}/quattor-template-library
+scdb_dir=${TMPDIR:-/tmp}/scdb-vanilla
 tl_download_script=get-template-library
 github_repos_url=https://github.com/quattor
 release_tools_repo=release
@@ -15,10 +15,13 @@ verbose=0
 tl_download_args=""
 externals_root_url=https://svn.lal.in2p3.fr/LCG/QWG/External
 scdb_external_list="ant panc scdb-ant-utils svnkit"
-panc_version=panc-10.0
-ant_version=apache-ant-1.7.1
+panc_version=panc-10.1
+ant_version=apache-ant-1.9.4
 scdb_ant_utils_version=scdb-ant-utils-9.0.2
-svnkit_version=svnkit-1.3.5
+svnkit_version=svnkit-1.8.6
+cluster_groups_default="grid"
+cluster_groups=
+
 
 # scdb source is typically a clone of GitHub scdb repo, switched to the appropriate
 # version/branch. By default, the root of the clone is 2 level upper than the directory
@@ -31,12 +34,15 @@ then
 fi
 
 usage () {
-  echo "usage:  `basename $0` [-F] [--debug] [-d scdb_dir] [quattor_version]"
+  echo "usage:  `basename $0` [-F] [--debug] [-d scdb_dir] [options...] [quattor_version]"
+  echo ""
+  echo "    Valid options are the following ones plus all valid get-template-library options:"
   echo ""
   echo "        -d scdb_dir : directory where to create SCDB."
   echo "                      (D: ${scdb_dir})"
   echo "        --debug : debug mode. Checkout rather than export templates"
   echo "        -F : remove scdb_dir if it already exists."
+  echo "        --group : cluster group to compile. Can be specified multiple times (D:${cluster_groups_default})"
   echo ""
   exit 1
 }
@@ -99,6 +105,15 @@ do
     remove_scdb=1
     ;;
 
+  --group)
+    shift
+    cluster_groups="${cluster_groups} $1 "
+    ;;
+
+  --help)
+    usage
+    ;;
+
   *)
     # All options unknown to this script are assumed to be options of the script used
     # to download the template library... Not ideal but wrong options will raise an 
@@ -110,6 +125,9 @@ do
     then
       tl_download_args="${tl_download_args} $2"
       shift
+    else
+      echo "Invalid option ($1). Aborting..."
+      usage
     fi
     ;;
   esac
@@ -123,6 +141,22 @@ then
 else
   echo "Quattor version to checkout is required (use 'HEAD' for the most recent revision)"
   exit 1
+fi
+
+if [ "${tl_version}" \> "15." -o "${tl_version}" = "HEAD" ]
+then
+  cluster_groups_enabled=1
+  if [ -z "${cluster_groups}" ]
+  then
+    cluster_groups=${cluster_groups_default}
+  fi
+else
+  cluster_groups_enabled=0
+  if [ -n "${cluster_groups}" ]
+  then
+    echo "WARNING: --group option supported only for version HEAD or >= 15. Ignored."
+  fi
+  cluster_groups=default      # Informational
 fi
 
 
@@ -191,6 +225,33 @@ then
 fi
 
 
+# Create a quattor.build.properties file.
+# Enable the use of cluster groups only for version HEAD or a version >= 15.x as 
+# before the template-library-examples repo was not configured with cluster groups.
+# Version is last parameter of the command line: assume it is valid if template
+# library download succeeded.
+property_file=${scdb_dir}/quattor.build.properties
+echo "Creating ${property_file}..."
+cat <<EOF >  ${property_file}
+build.annotations=\${basedir}/build.annotations
+pan.formats=json,dep
+EOF
+if [ ${cluster_groups_enabled} -eq 1 ]
+then
+  cat <<EOF >>  ${property_file}
+clusters.groups.enable=true
+EOF
+fi 
+
+
 # Compile examples
-echo "Compiling clusters/example..."
-(cd ${scdb_dir}; external/ant/bin/ant --noconfig)
+for group in ${cluster_groups}
+do
+  echo "Compiling clusters/example (group=${group})..."
+  ant_options=""
+  if [ ${cluster_groups_enabled} -eq 1 ]
+  then
+    ant_options="-Dcluster.group=${group}"
+  fi
+  (cd ${scdb_dir}; external/ant/bin/ant --noconfig ${ant_options})
+done
