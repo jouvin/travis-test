@@ -22,6 +22,7 @@ svnkit_version=svnkit-1.8.6
 cluster_groups_default="grid"
 cluster_groups=
 
+printenv
 
 # This script is typicall run from a clone of GitHub scdb repo, switched to the appropriate
 # version/branch. By default, the root of the clone is 2 level upper than the directory
